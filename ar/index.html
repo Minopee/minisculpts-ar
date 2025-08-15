@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>AR Scene</title>
+<style>body{margin:0;background:#0b0b0b;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:24px}.card{background:#151515;border-radius:16px;padding:20px;margin-top:16px;box-shadow:0 8px 40px rgba(0,0,0,.35)}
+code{background:#111;padding:2px 6px;border-radius:6px}.row{display:flex;gap:12px;flex-wrap:wrap}.badge{background:#222;border:1px solid #333;border-radius:999px;padding:6px 10px}
+.muted{opacity:.75}</style></head>
+<body><div class="wrap"><h1>AR сцена (демо-заглушка)</h1>
+<div class="card"><p>Параметры из QR:</p><div id="params" class="row"></div>
+<p class="muted">Здесь потом подключим WebAR (например, MindAR/Three.js) и подставим <code>scene</code>/<code>msg</code>/<code>palette</code>.</p></div>
+<div class="card"><p>Как работает:</p><ol>
+<li>QR ссылается на <code>/m/&lt;КОД&gt;</code>.</li>
+<li>Страница <code>404.html</code> читает код, берёт соответствие из <code>/m/map.json</code> и делает редирект на сцену.</li>
+</ol></div></div>
+<script>const p=new URLSearchParams(location.search);const out=document.getElementById('params');for(const[k,v]of p.entries()){const el=document.createElement('div');el.className='badge';el.textContent=k+' = '+v;out.appendChild(el);}</script>
+</body></html>

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Redirecting…</title>
+<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:0;display:grid;place-items:center;height:100vh;background:#0b0b0b;color:#fff}
+.card{max-width:720px;background:#151515;border-radius:14px;padding:24px;box-shadow:0 4px 32px rgba(0,0,0,.35)}code{background:#111;padding:2px 6px;border-radius:6px}.muted{opacity:.7}</style>
+</head><body><div class="card"><h1>Перенаправление…</h1><div id="msg" class="muted">Пожалуйста, подождите.</div></div>
+<script>(function(){const path=location.pathname;const siteBase=path.includes('/m/')?path.split('/m/')[0]:'';const code=path.includes('/m/')?path.split('/m/')[1].split('/')[0]:null;const M=document.getElementById('msg');
+function go(url){if(/^https?:\/\//i.test(url)){location.replace(url);}else{const abs=siteBase+(url.startsWith('/')?url:'/ar/index.html'+url);location.replace(abs);}}
+if(!code){M.textContent='Код не найден в адресе. Откройте QR снова или обратитесь к производителю.';setTimeout(()=>location.replace(siteBase+'/index.html'),1500);return;}
+fetch(siteBase+'/m/map.json',{cache:'no-store'}).then(r=>r.json()).then(map=>{const key=decodeURIComponent(code);if(map[key]){go(map[key]);}else{M.textContent='Код '+key+' не найден. Открываю сцену по умолчанию…';go('/ar/index.html?v=1&scene=default&n=000');}}).catch(err=>{console.error(err);M.textContent='Ошибка загрузки карты кодов. Открываю демо-сцену…';go('/ar/index.html?v=1&scene=demo');});})();</script>
+</body></html>
