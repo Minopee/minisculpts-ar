@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+  <title>Mini Sculpts — AR (compat)</title>
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif}
+    #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:10;flex-direction:column;gap:12px;text-align:center;padding:24px}
+    #start{padding:12px 18px;border-radius:999px;border:0;background:#22c55e;color:#000;font-weight:700;font-size:16px;cursor:pointer}
+    #hint{opacity:.8;font-size:14px}
+    #msgbar{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 12px;font-size:14px;z-index:5}
+    #err{position:fixed;top:12px;left:12px;right:12px;background:#b91c1c;color:#fff;padding:10px;border-radius:10px;display:none;z-index:20}
+  </style>
+</head>
+<body>
+<div id="err"></div>
+<div id="ui">
+  <h1>Мини-AR</h1>
+  <div style="opacity:.9;max-width:560px">Разреши камеру и наведи на «монету» на базе фигурки.</div>
+  <button id="start">Запустить AR</button>
+  <div id="hint">Свет без бликов, 30–60 см до маркера.</div>
+</div>
+<div id="msgbar" style="display:none"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-three.prod.js"></script>
+
+<script>
+(function(){
+  const qs = new URLSearchParams(location.search);
+  const userMsg = qs.get('msg') || 'С днём рождения!';
+  const modelName = qs.get('model') || 'hbday.glb';
+  const s  = parseFloat(qs.get('s')  || '0.4');
+  const px = parseFloat(qs.get('px') || '0');
+  const py = parseFloat(qs.get('py') || '0.45');
+  const pz = parseFloat(qs.get('pz') || '0');
+  const rx = parseFloat(qs.get('rx') || '0');
+  const ry = parseFloat(qs.get('ry') || '0');
+  const rz = parseFloat(qs.get('rz') || '0');
+
+  const $ = (sel)=>document.querySelector(sel);
+  const showErr = (t)=>{ const e=$("#err"); e.textContent=t; e.style.display='block'; };
+  const showMsg = (t)=>{ const m=$("#msgbar"); m.innerHTML=t; m.style.display='block'; };
+
+  $("#start").addEventListener("click", ()=>{
+    $("#ui").style.display="none";
+    startAR().catch(e=>showErr('Ошибка запуска: '+e.message));
+  });
+
+  function makeTextSprite(text, fontSize){
+    const cnv = document.createElement('canvas'), ctx = cnv.getContext('2d'), pad=32;
+    ctx.font = '700 '+fontSize+'px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial';
+    const w = Math.min(2048, Math.max(512, ctx.measureText(text).width + pad*2)), h = fontSize + pad*2;
+    cnv.width=w; cnv.height=h;
+    ctx.font = '700 '+fontSize+'px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial';
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineWidth = fontSize*0.16; ctx.strokeStyle = '#000';
+    ctx.strokeText(text, w/2, h/2); ctx.fillStyle='#fff'; ctx.fillText(text, w/2, h/2);
+    const tex = new THREE.CanvasTexture(cnv); tex.encoding = THREE.sRGBEncoding;
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true}));
+    const aspect = w/h; const k=1.2; spr.scale.set(k*aspect,k,1); return spr;
+  }
+
+  async function startAR(){
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      throw new Error('Браузер не даёт доступ к камере (откройте в Safari/Chrome, не внутри мессенджера).');
+    }
+    const MindAR = window.MINDAR;
+    if(!MindAR || !MindAR.IMAGE || !MindAR.IMAGE.MindARThree){
+      throw new Error('MindAR не загрузился — проверьте интернет и блокировщики.');
+    }
+
+    const mindarThree = new MindAR.IMAGE.MindARThree({
+      container: document.body,
+      imageTargetSrc: './targets/moneta.mind',
+      uiScanning: true,
+      filterMinCF: 0.0001,
+      filterBeta: 0.01,
+      maxTrack: 1,
+    });
+    const {renderer, scene, camera} = mindarThree;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(0,1,1); scene.add(dir);
+
+    const anchor = mindarThree.addAnchor(0);
+    const root = new THREE.Group(); anchor.group.add(root);
+
+    const banner = makeTextSprite(userMsg, 92); banner.position.set(0,0.9,0); root.add(banner);
+
+    try{
+      const loader = new THREE.GLTFLoader();
+      loader.load('./assets/'+modelName, (gltf)=>{
+        const obj = gltf.scene || gltf.scenes[0];
+        obj.scale.setScalar(s);
+        obj.position.set(px, py, pz);
+        obj.rotation.set(THREE.Math.degToRad(rx), THREE.Math.degToRad(ry), THREE.Math.degToRad(rz));
+        obj.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; }});
+        obj.userData.update = (t,dt)=>{ obj.rotation.y += dt*0.2; };
+        root.add(obj);
+        showMsg('model=<b>'+modelName+'</b> • s='+s);
+      }, undefined, (err)=> showErr('Не удалось загрузить модель: '+err.message));
+    }catch(e){
+      showErr('GLTFLoader не загрузился: '+e.message);
+    }
+
+    anchor.onTargetFound = ()=> showMsg('🎯 Трек найден');
+    anchor.onTargetLost  = ()=> showMsg('🔎 Потерял трек — держи монету в кадре');
+
+    const clock = new THREE.Clock();
+    try{
+      await mindarThree.start();
+      renderer.setAnimationLoop(()=>{
+        const dt = Math.min(0.033, clock.getDelta()), t=clock.elapsedTime;
+        root.traverse(o=>o.userData&&o.userData.update&&o.userData.update(t,dt));
+        renderer.render(scene, camera);
+      });
+    }catch(e){
+      showErr('Не удалось запустить AR: '+e.message+' • Проверь /ar/targets/moneta.mind и разрешение камеры.');
+    }
+  }
+})();
+</script>
+</body>
+</html>
