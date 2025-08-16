@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+<title>AR Debug</title>
+<style>
+  body{margin:0;background:#0b0b0b;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
+  .wrap{max-width:820px;margin:0 auto;padding:16px}
+  .card{background:#151515;border:1px solid #2a2a2a;border-radius:14px;padding:16px;margin:12px 0}
+  code{background:#111;padding:2px 6px;border-radius:6px}
+  .ok{color:#22c55e}.bad{color:#ef4444}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #444;background:#111;color:#fff;cursor:pointer}
+  video{width:100%;max-width:420px;border-radius:10px;background:#000;margin-top:8px}
+  pre{white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Диагностика WebAR</h1>
+
+  <div class="card" id="libs">
+    <h3>1) Библиотеки</h3>
+    <div>THREE: <b id="t"></b>, GLTFLoader: <b id="g"></b>, MINDAR: <b id="m"></b></div>
+    <div style="margin-top:8px">
+      <small>Файлы должны существовать по путям:<br>
+      <code>/ar/vendor/three.min.js</code>, <code>/ar/vendor/GLTFLoader.js</code>, <code>/ar/vendor/mindar-image-three.prod.js</code></small>
+    </div>
+  </div>
+
+  <div class="card" id="files">
+    <h3>2) Файлы проекта</h3>
+    <div>Target <code>/ar/targets/moneta.mind</code>: <b id="tt"></b></div>
+    <div>Model <code>/ar/assets/hbday.glb</code>: <b id="mm"></b></div>
+    <div style="margin-top:8px">
+      <button id="recheck">Проверить снова</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>3) Мини-запуск MindAR (без модели)</h3>
+    <div>Если всё выше «зелёное», нажми «Старт» — должен попросить камеру и увидеть «монету».</div>
+    <div style="margin-top:8px">
+      <button id="start">Старт</button>
+      <div id="out" style="margin-top:8px"></div>
+      <video id="v" playsinline muted></video>
+    </div>
+    <pre id="err" class="bad"></pre>
+  </div>
+</div>
+
+<!-- ЛОКАЛЬНЫЕ UMD -->
+<script src="./vendor/three.min.js"></script>
+<script src="./vendor/GLTFLoader.js"></script>
+<script src="./vendor/mindar-image-three.prod.js"></script>
+
+<script>
+const $ = s=>document.querySelector(s);
+function set(id, ok){ $(id).textContent = ok ? 'OK' : 'нет'; $(id).className = ok ? 'ok':'bad'; }
+async function head(url){ try{ const r=await fetch(url,{method:'HEAD'}); return r.ok }catch{ return false } }
+
+function readLibs(){
+  set('#t', !!window.THREE);
+  set('#g', !!(window.THREE && THREE.GLTFLoader));
+  set('#m', !!(window.MINDAR && MINDAR.IMAGE && MINDAR.IMAGE.MindARThree));
+}
+
+async function readFiles(){
+  set('#tt', await head('./targets/moneta.mind'));
+  set('#mm', await head('./assets/hbday.glb'));
+}
+
+$('#recheck').onclick = ()=> readFiles();
+
+// минимальный запуск без GLB (только проверка MindAR)
+$('#start').onclick = async ()=>{
+  $('#err').textContent = ''; $('#out').textContent = '';
+  try{
+    if(!navigator.mediaDevices?.getUserMedia) throw new Error('getUserMedia недоступен. Открой в Safari/Chrome (не в приложениях).');
+    if(!(window.MINDAR && MINDAR.IMAGE && MINDAR.IMAGE.MindARThree)) throw new Error('MindAR не загружен (vendor/mindar-image-three.prod.js).');
+    const cam = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    $('#v').srcObject = cam;
+
+    const mindar = new MINDAR.IMAGE.MindARThree({
+      container: document.body,
+      imageTargetSrc: './targets/moneta.mind',
+      uiScanning: true, maxTrack: 1
+    });
+    const {renderer, scene, camera} = mindar;
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
+    const anchor = mindar.addAnchor(0);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.05), new THREE.MeshBasicMaterial({color:0x00ff99}));
+    anchor.group.add(dot);
+
+    anchor.onTargetFound = ()=> $('#out').innerHTML = '🎯 Трек найден';
+    anchor.onTargetLost  = ()=> $('#out').innerHTML = '🔎 Потерял трек';
+
+    await mindar.start();
+    renderer.setAnimationLoop(()=> renderer.render(scene, camera));
+  }catch(e){ $('#err').textContent = 'Ошибка: '+(e.message||e); }
+};
+
+// первичная проверка при загрузке
+readLibs(); readFiles();
+</script>
+</body></html>
