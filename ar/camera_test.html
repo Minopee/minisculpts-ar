@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Camera Test — getUserMedia</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:0;background:#0b0b0b;color:#fff;padding:20px}
+    .card{max-width:800px;margin:0 auto;background:#151515;border-radius:14px;padding:18px;box-shadow:0 4px 24px rgba(0,0,0,.35)}
+    video{width:100%;max-width:640px;border-radius:10px;background:#000}
+    .err{background:#b91c1c;padding:10px;border-radius:10px;margin-top:10px}
+    .ok{background:#14532d;padding:10px;border-radius:10px;margin-top:10px}
+    code{background:#111;padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Проверка камеры (getUserMedia)</h1>
+  <p>Нажми кнопку ниже — браузер должен запросить доступ к камере. Работает только по HTTPS и в обычном браузере (Safari/Chrome), не внутри мессенджеров.</p>
+  <button id="btn">Запросить доступ</button>
+  <div id="out"></div>
+  <video id="v" playsinline autoplay muted></video>
+</div>
+
+<script>
+const v = document.getElementById('v');
+const out = document.getElementById('out');
+document.getElementById('btn').onclick = async () => {
+  out.innerHTML = '';
+  try{
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      throw new Error('navigator.mediaDevices.getUserMedia недоступен. Откройте сайт в Safari/Chrome, не в приложении.');
+    }
+    const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    v.srcObject = s;
+    out.innerHTML = '<div class="ok">Камера работает! Если AR не запускается — дело не в разрешении.</div>';
+  }catch(e){
+    out.innerHTML = '<div class="err">Ошибка доступа к камере: <code>'+ (e.message || e) +'</code><br/>Проверьте разрешения сайта и откройте в Safari/Chrome.</div>';
+    console.error(e);
+  }
+};
+</script>
+</body>
+</html>
