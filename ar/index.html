@@ -1,146 +1,122 @@
 <!doctype html>
-<html lang="ru"><head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>Mini Sculpts — AR (debug)</title>
-<style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
-  #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:10;flex-direction:column;gap:12px;padding:24px;text-align:center}
-  #start{padding:12px 18px;border-radius:999px;border:0;background:#22c55e;color:#000;font-weight:700;font-size:16px;cursor:pointer}
-  #diag{position:fixed;left:12px;top:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 12px;font-size:13px;z-index:15;white-space:pre}
-  #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 12px;font-size:14px;z-index:5}
-  #err{position:fixed;top:60px;left:12px;right:12px;background:#b91c1c;color:#fff;padding:10px;border-radius:10px;display:none;z-index:20;white-space:pre-wrap}
-  button.small{padding:6px 10px;border-radius:8px;border:1px solid #555;background:#111;color:#fff;cursor:pointer}
-</style>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+  <title>Mini Sculpts — AR (ESM)</title>
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
+    #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:10;flex-direction:column;gap:12px;text-align:center;padding:24px}
+    #start{padding:12px 18px;border-radius:999px;border:0;background:#22c55e;color:#000;font-weight:700;font-size:16px;cursor:pointer}
+    #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 12px;font-size:14px;z-index:5}
+    #err{position:fixed;top:12px;left:12px;right:12px;background:#b91c1c;color:#fff;padding:10px;border-radius:10px;display:none;z-index:20;white-space:pre-wrap}
+  </style>
+
+  <!-- import map: указываем локальные пути к three и его addons -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three.module.js",
+      "three/addons/": "./vendor/three/examples/jsm/",
+      "mindar-image-three": "./vendor/mindar/mindar-image-three.prod.js"
+    }
+  }
+  </script>
 </head>
 <body>
-<div id="diag">Загрузка…</div>
 <div id="err"></div>
 <div id="ui">
   <h1>Мини-AR</h1>
-  <div style="opacity:.9;max-width:560px">Разреши камеру и наведи на «монету».</div>
-  <div style="display:flex;gap:8px;margin-top:8px">
-    <button id="check" class="small">Проверить файлы</button>
-    <button id="start">Запустить AR</button>
-  </div>
-  <div style="opacity:.7;font-size:13px;margin-top:8px">Открывай в Safari/Chrome (не в приложениях).</div>
+  <div style="opacity:.9;max-width:560px">Разреши камеру и наведи на «монету» на базе фигурки.</div>
+  <button id="start">Запустить AR</button>
+  <div style="opacity:.7;font-size:13px">Открывай в Safari/Chrome (не в приложениях).</div>
 </div>
 <div id="msg" style="display:none"></div>
 
-<!-- ЛОКАЛЬНЫЕ UMD-скрипты -->
-<script src="./vendor/three.min.js"></script>
-<script src="./vendor/GLTFLoader.js"></script>
-<script src="./vendor/mindar/mindar-image-three.prod.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MindARThree } from 'mindar-image-three';
 
-<script>
-(function(){
-  const qs = new URLSearchParams(location.search);
-  const modelName = qs.get('model') || 'hbday.glb';
-  const userMsg   = qs.get('msg')   || 'С днём рождения!';
-  const s  = parseFloat(qs.get('s')  || '0.4');
-  const px = parseFloat(qs.get('px') || '0');
-  const py = parseFloat(qs.get('py') || '0.45');
-  const pz = parseFloat(qs.get('pz') || '0');
-  const rx = parseFloat(qs.get('rx') || '0');
-  const ry = parseFloat(qs.get('ry') || '0');
-  const rz = parseFloat(qs.get('rz') || '0');
+const qs = new URLSearchParams(location.search);
+const modelName = qs.get('model') || 'hbday.glb';  // файл в /ar/assets/
+const userMsg   = qs.get('msg')   || 'С днём рождения!';
+const s  = parseFloat(qs.get('s')  || '0.4');
+const px = parseFloat(qs.get('px') || '0');
+const py = parseFloat(qs.get('py') || '0.45');
+const pz = parseFloat(qs.get('pz') || '0');
+const rx = parseFloat(qs.get('rx') || '0');
+const ry = parseFloat(qs.get('ry') || '0');
+const rz = parseFloat(qs.get('rz') || '0');
 
-  const $ = (sel)=>document.querySelector(sel);
-  const showErr = (t)=>{ const e=$("#err"); e.textContent=t; e.style.display='block'; };
-  const showMsg = (t)=>{ const m=$("#msg"); m.innerHTML=t; m.style.display='block'; };
-  const setDiag = (t)=>{ $("#diag").textContent = t; };
+const $ = s=>document.querySelector(s);
+const showErr = t=>{ const e=$("#err"); e.textContent=t; e.style.display='block'; };
+const showMsg = t=>{ const m=$("#msg"); m.innerHTML=t; m.style.display='block'; };
 
-  // Глобальный ловец ошибок (чтоб не «молчало»)
-  window.addEventListener('error', e=>{
-    showErr('JS error: '+ (e.error?.message || e.message || e));
+$("#start").addEventListener("click", ()=>startAR().catch(e=>showErr('Ошибка: '+(e.message||e))));
+
+function makeTextSprite(text, fontSize=92){
+  const c=document.createElement('canvas'), x=c.getContext('2d'), pad=32;
+  x.font=`700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial`;
+  const w=Math.min(2048, Math.max(512, x.measureText(text).width+pad*2)), h=fontSize+pad*2;
+  c.width=w; c.height=h; x.font=`700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial`;
+  x.textAlign='center'; x.textBaseline='middle'; x.lineWidth=fontSize*0.16; x.strokeStyle='#000'; x.strokeText(text,w/2,h/2);
+  x.fillStyle='#fff'; x.fillText(text,w/2,h/2);
+  const tex=new THREE.CanvasTexture(c); tex.encoding=THREE.sRGBEncoding;
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true}));
+  const aspect=w/h, k=1.2; spr.scale.set(k*aspect,k,1); return spr;
+}
+
+async function headOk(u){ try{ const r=await fetch(u,{method:'HEAD'}); return r.ok; }catch{ return false; } }
+
+async function startAR(){
+  $("#ui").style.display="none";
+
+  if(!(await headOk('./targets/moneta.mind'))) throw new Error('Нет файла /ar/targets/moneta.mind');
+  if(!(await headOk('./assets/'+modelName)))   throw new Error('Нет модели /ar/assets/'+modelName);
+
+  const mindarThree = new MindARThree({
+    container: document.body,
+    imageTargetSrc: './targets/moneta.mind',
+    uiScanning: true, filterMinCF: 0.0001, filterBeta: 0.01, maxTrack: 1,
   });
 
-  // Мгновенная диагностика загрузки библиотек
-  const libState = {
-    THREE: !!window.THREE,
-    GLTFLoader: !!(window.THREE && THREE.GLTFLoader),
-    MINDAR: !!(window.MINDAR && MINDAR.IMAGE && MINDAR.IMAGE.MindARThree)
-  };
-  setDiag(`THREE: ${libState.THREE}\nGLTFLoader: ${libState.GLTFLoader}\nMINDAR: ${libState.MINDAR}`);
+  const {renderer, scene, camera} = mindarThree;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputEncoding = THREE.sRGBEncoding;
 
-  // Ручная проверка путей к таргету и модели
-  $("#check").onclick = async ()=>{
-    const head = (u)=>fetch(u,{method:'HEAD'}).then(r=>r.status+' '+(r.ok?'OK':'ERR')).catch(()=> 'ERR');
-    const a = await head('./targets/moneta.mind');
-    const b = await head('./assets/'+modelName);
-    setDiag(`THREE: ${!!window.THREE}\nGLTFLoader: ${!!(window.THREE&&THREE.GLTFLoader)}\nMINDAR: ${!!(window.MINDAR&&MINDAR.IMAGE&&MINDAR.IMAGE.MindARThree)}\nTARGET: ${a}\nMODEL: ${b}`);
-  };
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(0,1,1); scene.add(dir);
 
-  $("#start").onclick = ()=> run().catch(e=>showErr('Ошибка запуска: '+(e.message||e)));
+  const anchor = mindarThree.addAnchor(0);
+  const root = new THREE.Group(); anchor.group.add(root);
 
-  function makeTextSprite(text, fontSize=92){
-    const c=document.createElement('canvas'), x=c.getContext('2d'), pad=32;
-    x.font=`700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial`;
-    const w=Math.min(2048, Math.max(512, x.measureText(text).width+pad*2)), h=fontSize+pad*2;
-    c.width=w; c.height=h; x.font=`700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial`;
-    x.textAlign='center'; x.textBaseline='middle';
-    x.lineWidth=fontSize*0.16; x.strokeStyle='#000'; x.strokeText(text,w/2,h/2);
-    x.fillStyle='#fff'; x.fillText(text,w/2,h/2);
-    const tex=new THREE.CanvasTexture(c); tex.encoding=THREE.sRGBEncoding;
-    const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true}));
-    const aspect=w/h, k=1.2; spr.scale.set(k*aspect,k,1); return spr;
-  }
+  const banner = makeTextSprite(userMsg, 92); banner.position.set(0,0.9,0); root.add(banner);
 
-  async function headOk(u){ try{ const r=await fetch(u,{method:'HEAD'}); return r.ok; }catch{ return false; } }
+  const loader = new GLTFLoader();
+  loader.load('./assets/'+modelName, (gltf)=>{
+    const obj = gltf.scene || gltf.scenes[0];
+    obj.scale.setScalar(s);
+    obj.position.set(px, py, pz);
+    obj.rotation.set(THREE.MathUtils.degToRad(rx), THREE.MathUtils.degToRad(ry), THREE.MathUtils.degToRad(rz));
+    obj.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; }});
+    obj.userData.update=(t,dt)=>{ obj.rotation.y += dt*0.2; };
+    root.add(obj);
+    showMsg('model=<b>'+modelName+'</b> • s='+s);
+  }, undefined, (err)=> showErr('GLTF_LOAD_FAIL: '+err.message));
 
-  async function run(){
-    // Проверяем, что библиотеки загрузились
-    if(!window.THREE) throw new Error('THREE not loaded — проверь vendor/three.min.js');
-    if(!THREE.GLTFLoader) throw new Error('GLTFLoader not loaded — нужна версия из examples/js/, не jsm/');
-    if(!window.MINDAR || !MINDAR.IMAGE || !MINDAR.IMAGE.MindARThree)
-      throw new Error('MindAR not loaded — проверь vendor/mindar-image-three.prod.js (UMD из npm/dist)');
+  anchor.onTargetFound = ()=> showMsg('🎯 Трек найден');
+  anchor.onTargetLost  = ()=> showMsg('🔎 Держи «монету» в кадре');
 
-    // Проверяем файлы проекта
-    if(!(await headOk('./targets/moneta.mind'))) throw new Error('Нет файла /ar/targets/moneta.mind');
-    if(!(await headOk('./assets/'+modelName)))   throw new Error('Нет модели /ar/assets/'+modelName);
-
-    const mindarThree = new MINDAR.IMAGE.MindARThree({
-      container: document.body,
-      imageTargetSrc: './targets/moneta.mind',
-      uiScanning: true, filterMinCF: 0.0001, filterBeta: 0.01, maxTrack: 1,
-    });
-
-    const {renderer, scene, camera} = mindarThree;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputEncoding = THREE.sRGBEncoding;
-
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(0,1,1); scene.add(dir);
-
-    const anchor = mindarThree.addAnchor(0);
-    const root = new THREE.Group(); anchor.group.add(root);
-
-    const banner = makeTextSprite(userMsg, 92); banner.position.set(0,0.9,0); root.add(banner);
-
-    const loader = new THREE.GLTFLoader();
-    loader.load('./assets/'+modelName, (gltf)=>{
-      const obj = gltf.scene || gltf.scenes[0];
-      obj.scale.setScalar(s);
-      obj.position.set(px, py, pz);
-      obj.rotation.set(THREE.Math.degToRad(rx), THREE.Math.degToRad(ry), THREE.Math.degToRad(rz));
-      obj.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; }});
-      obj.userData.update=(t,dt)=>{ obj.rotation.y += dt*0.2; };
-      root.add(obj);
-      showMsg('model=<b>'+modelName+'</b> • s='+s);
-    }, undefined, (err)=> showErr('GLTF_LOAD_FAIL: '+err.message));
-
-    anchor.onTargetFound = ()=> showMsg('🎯 Трек найден');
-    anchor.onTargetLost  = ()=> showMsg('🔎 Держи «монету» в кадре');
-
-    const clock = new THREE.Clock();
-    await mindarThree.start();
-    renderer.setAnimationLoop(()=>{
-      const dt = Math.min(0.033, clock.getDelta()), t=clock.elapsedTime;
-      root.traverse(o=>o.userData&&o.userData.update&&o.userData.update(t,dt));
-      renderer.render(scene, camera);
-    });
-  }
-})();
+  const clock = new THREE.Clock();
+  await mindarThree.start();
+  renderer.setAnimationLoop(()=>{
+    const dt = Math.min(0.033, clock.getDelta());
+    root.traverse(o=>o.userData?.update?.(clock.elapsedTime, dt));
+    renderer.render(scene, camera);
+  });
+}
 </script>
-</body></html>
+</body>
+</html>
