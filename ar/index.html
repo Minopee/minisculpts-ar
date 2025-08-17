@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>Mini Sculpts — AR (ESM + DRACO + центрирование)</title>
+<title>Mini Sculpts — AR (ESM + DRACO + Animation)</title>
 <style>
   html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
   #app{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -46,23 +46,26 @@ import { DRACOLoader }  from 'three/addons/loaders/DRACOLoader.js';
 import { MindARThree }  from 'mindar-image-three';
 
 const qs = new URLSearchParams(location.search);
-const modelName = qs.get('model') || 'hbday.glb';        // файл в /ar/assets/
+const modelName = qs.get('model') || 'hbday_anim.glb';   // твой файл с анимацией
 const s  = parseFloat(qs.get('s')  || '0.4');
 const px = parseFloat(qs.get('px') || '0');
 const py = parseFloat(qs.get('py') || '0.45');
 const pz = parseFloat(qs.get('pz') || '0');
-const rx = parseFloat(qs.get('rx') || '0');
+const rx = parseFloat(qs.get('rx') || '-90'); // по умолчанию развернём как раньше
 const ry = parseFloat(qs.get('ry') || '0');
-const rz = parseFloat(qs.get('rz') || '0');
-
-const noModel = qs.get('nomodel') === '1';               // ?nomodel=1 — запуск без GLB
-const userMsg = qs.get('msg') || 'С днём рождения!';     // дефолтный текст
-const noMsg   = noModel || (qs.get('nomsg') === '1');    // ?nomsg=1 скрывает надпись
+const rz = parseFloat(qs.get('rz') || '180'); // докрутка, если нужно
+const noModel = qs.get('nomodel') === '1';
+const userMsg = qs.get('msg') || '';
+const noMsg   = noModel || (qs.get('nomsg') === '1');
+const clipName = qs.get('clip') || '';      // ?clip=ИмяКлипа
+const speed    = parseFloat(qs.get('speed') || '1'); // ?speed=1.0
 
 const $ = s=>document.querySelector(s);
 const log = t => { $("#dbg").textContent = t; };
 const showErr = t=>{ const e=$("#err"); e.textContent=t; e.style.display='block'; };
 const showHud = t=>{ const m=$("#hud"); m.innerHTML=t; m.style.display='block'; };
+
+let mixers = [];
 
 window.addEventListener('error', e => showErr('JS error: '+(e.error?.message||e.message||e)));
 $("#start").addEventListener("click", ()=>startAR().catch(e=>showErr('Ошибка: '+(e.message||e))));
@@ -100,7 +103,7 @@ async function startAR(){
   });
 
   const { renderer, scene, camera } = mindarThree;
-  const video = mindarThree.video; // ESM: так корректно
+  const video = mindarThree.video;
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -119,18 +122,17 @@ async function startAR(){
   const anchor = mindarThree.addAnchor(0);
   const root = new THREE.Group(); anchor.group.add(root);
 
-  // надпись (можно скрыть параметром ?nomsg=1)
   if (!noMsg && (userMsg || '').trim()) {
     const banner = makeTextSprite(userMsg, 92);
     banner.position.set(0, 0.9, 0);
     root.add(banner);
   }
 
-  // === загрузка модели (с DRACO) + центрирование и «посадка» на плоскость ===
+  // === загрузка модели (с DRACO) + центрирование на базу + анимация ===
   if (!noModel) {
     const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath('./vendor/three/examples/jsm/libs/draco/'); // папка .wasm/.js
-    dracoLoader.setDecoderConfig({ type: 'wasm' }); // при проблемах можно { type:'js' }
+    dracoLoader.setDecoderPath('./vendor/three/examples/jsm/libs/draco/');
+    dracoLoader.setDecoderConfig({ type: 'wasm' });
     dracoLoader.preload();
 
     const loader = new GLTFLoader();
@@ -139,7 +141,7 @@ async function startAR(){
     loader.load('./assets/'+modelName, (gltf)=>{
       const obj = gltf.scene || gltf.scenes[0];
 
-      // 1) базовые трансформации
+      // 1) ориентация/масштаб
       obj.scale.setScalar(s);
       obj.rotation.set(
         THREE.MathUtils.degToRad(rx),
@@ -153,19 +155,35 @@ async function startAR(){
       const center = box.getCenter(new THREE.Vector3());
       const bottom = box.min.y;
 
-      // 3) pivot в центре «монеты»: позиция задаётся параметрами px/py/pz
+      // 3) pivot по центру монеты
       const pivot = new THREE.Group();
       pivot.position.set(px, py, pz);
       root.add(pivot);
 
-      // 4) переносим геометрию к собственному центру…
+      // 4) переносим геометрию: центр в (0,0,0), «дно» на y=0
       obj.position.sub(center);
-      // …и поднимаем так, чтобы «дно» модели стояло на плоскости маркера (y=0)
       obj.position.y += (center.y - bottom);
 
-      // 5) добавляем в pivot и вращаем pivot (ось всегда по центру «монеты»)
+      // 5) добавляем в pivot (без автоповорота)
       pivot.add(obj);
-      pivot.userData.update = (t, dt) => { pivot.rotation.y += dt * 0.6; };
+
+      // 6) анимации
+      if (gltf.animations && gltf.animations.length) {
+        const mixer = new THREE.AnimationMixer(obj);
+        let clip = gltf.animations[0];
+        if (clipName) {
+          const found = THREE.AnimationClip.findByName(gltf.animations, clipName);
+          if (found) clip = found;
+        }
+        const action = mixer.clipAction(clip);
+        action.timeScale = speed || 1.0;
+        action.setLoop(THREE.LoopRepeat);
+        action.clampWhenFinished = false;
+        action.play();
+        mixers.push(mixer);
+      } else {
+        showHud('⚠️ В GLB не найдены клипы анимации');
+      }
 
       showHud(`model=<b>${modelName}</b> • s=${s}`);
     }, undefined, (err)=> showErr('GLTF_LOAD_FAIL: '+err.message));
@@ -181,11 +199,12 @@ async function startAR(){
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(()=>{
       const dt = Math.min(0.033, clock.getDelta());
-      root.traverse(o=>o.userData?.update?.(clock.elapsedTime, dt));
+      // апдейтим анимации
+      for (const m of mixers) m.update(dt);
       renderer.render(scene, camera);
     });
   }catch(e){
-    showErr('MINDAR_START_FAIL: '+e.message+'\nПроверь разрешение камеры и открой ссылку в чистом Chrome/Safari (не внутри приложений).');
+    showErr('MINDAR_START_FAIL: '+e.message+'\nПроверь разрешение камеры и открой ссылку в чистом Chrome/Safari.');
   }
 }
 </script>
