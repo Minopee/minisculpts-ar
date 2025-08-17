@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>Mini Sculpts — AR (ESM + DRACO)</title>
+<title>Mini Sculpts — AR (ESM + DRACO + центрирование)</title>
 <style>
   html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
   #app{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -32,9 +32,9 @@
 
 <div id="ui">
   <h1>Мини-AR</h1>
-  <div style="opacity:.9;max-width:560px">Разреши камеру и наведи на «монету» на базе фигурки.</div>
+  <div style="opacity:.9;max-width:560px">Разреши камеру и наведи на «монету».</div>
   <button id="start">Запустить AR</button>
-  <div style="opacity:.7;font-size:13px">Открывай в Chrome/Safari (не внутри Telegram/VK). Свет без бликов.</div>
+  <div style="opacity:.7;font-size:13px">Открывай в Chrome/Safari (не внутри мессенджеров). Свет без бликов.</div>
 </div>
 
 <div id="hud"></div>
@@ -57,7 +57,7 @@ const rz = parseFloat(qs.get('rz') || '0');
 
 const noModel = qs.get('nomodel') === '1';               // ?nomodel=1 — запуск без GLB
 const userMsg = qs.get('msg') || 'С днём рождения!';     // дефолтный текст
-const noMsg   = noModel || (qs.get('nomsg') === '1');    // ВАРИАНТ A: ?nomsg=1 скрывает надпись
+const noMsg   = noModel || (qs.get('nomsg') === '1');    // ?nomsg=1 скрывает надпись
 
 const $ = s=>document.querySelector(s);
 const log = t => { $("#dbg").textContent = t; };
@@ -119,14 +119,14 @@ async function startAR(){
   const anchor = mindarThree.addAnchor(0);
   const root = new THREE.Group(); anchor.group.add(root);
 
-  // надпись — показываем только если не задан nomsg=1 и есть текст
+  // надпись (можно скрыть параметром ?nomsg=1)
   if (!noMsg && (userMsg || '').trim()) {
     const banner = makeTextSprite(userMsg, 92);
     banner.position.set(0, 0.9, 0);
     root.add(banner);
   }
 
-  // загрузка модели (с DRACO)
+  // === загрузка модели (с DRACO) + центрирование и «посадка» на плоскость ===
   if (!noModel) {
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('./vendor/three/examples/jsm/libs/draco/'); // папка .wasm/.js
@@ -138,12 +138,35 @@ async function startAR(){
 
     loader.load('./assets/'+modelName, (gltf)=>{
       const obj = gltf.scene || gltf.scenes[0];
+
+      // 1) базовые трансформации
       obj.scale.setScalar(s);
-      obj.position.set(px, py, pz);
-      obj.rotation.set(THREE.MathUtils.degToRad(rx), THREE.MathUtils.degToRad(ry), THREE.MathUtils.degToRad(rz));
-      obj.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; }});
-      obj.userData.update=(t,dt)=>{ obj.rotation.y += dt*0.2; };
-      root.add(obj);
+      obj.rotation.set(
+        THREE.MathUtils.degToRad(rx),
+        THREE.MathUtils.degToRad(ry),
+        THREE.MathUtils.degToRad(rz)
+      );
+
+      // 2) bbox с учётом масштаба/поворота
+      obj.updateMatrixWorld(true);
+      const box    = new THREE.Box3().setFromObject(obj);
+      const center = box.getCenter(new THREE.Vector3());
+      const bottom = box.min.y;
+
+      // 3) pivot в центре «монеты»: позиция задаётся параметрами px/py/pz
+      const pivot = new THREE.Group();
+      pivot.position.set(px, py, pz);
+      root.add(pivot);
+
+      // 4) переносим геометрию к собственному центру…
+      obj.position.sub(center);
+      // …и поднимаем так, чтобы «дно» модели стояло на плоскости маркера (y=0)
+      obj.position.y += (center.y - bottom);
+
+      // 5) добавляем в pivot и вращаем pivot (ось всегда по центру «монеты»)
+      pivot.add(obj);
+      pivot.userData.update = (t, dt) => { pivot.rotation.y += dt * 0.6; };
+
       showHud(`model=<b>${modelName}</b> • s=${s}`);
     }, undefined, (err)=> showErr('GLTF_LOAD_FAIL: '+err.message));
   }
