@@ -47,7 +47,6 @@ import { MindARThree }  from 'mindar-image-three';
 
 const qs = new URLSearchParams(location.search);
 const modelName = qs.get('model') || 'hbday.glb';        // файл в /ar/assets/
-const userMsg   = qs.get('msg')   || 'С днём рождения!';
 const s  = parseFloat(qs.get('s')  || '0.4');
 const px = parseFloat(qs.get('px') || '0');
 const py = parseFloat(qs.get('py') || '0.45');
@@ -55,7 +54,10 @@ const pz = parseFloat(qs.get('pz') || '0');
 const rx = parseFloat(qs.get('rx') || '0');
 const ry = parseFloat(qs.get('ry') || '0');
 const rz = parseFloat(qs.get('rz') || '0');
-const noModel = qs.get('nomodel') === '1';              // ?nomodel=1 — запуск без GLB
+
+const noModel = qs.get('nomodel') === '1';               // ?nomodel=1 — запуск без GLB
+const userMsg = qs.get('msg') || 'С днём рождения!';     // дефолтный текст
+const noMsg   = noModel || (qs.get('nomsg') === '1');    // ВАРИАНТ A: ?nomsg=1 скрывает надпись
 
 const $ = s=>document.querySelector(s);
 const log = t => { $("#dbg").textContent = t; };
@@ -117,14 +119,18 @@ async function startAR(){
   const anchor = mindarThree.addAnchor(0);
   const root = new THREE.Group(); anchor.group.add(root);
 
-  // баннер-текст
-  const banner = makeTextSprite(userMsg, 92); banner.position.set(0,0.9,0); root.add(banner);
+  // надпись — показываем только если не задан nomsg=1 и есть текст
+  if (!noMsg && (userMsg || '').trim()) {
+    const banner = makeTextSprite(userMsg, 92);
+    banner.position.set(0, 0.9, 0);
+    root.add(banner);
+  }
 
   // загрузка модели (с DRACO)
   if (!noModel) {
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('./vendor/three/examples/jsm/libs/draco/'); // папка .wasm/.js
-    dracoLoader.setDecoderConfig({ type: 'wasm' }); // при проблемах с wasm можно: { type: 'js' }
+    dracoLoader.setDecoderConfig({ type: 'wasm' }); // при проблемах можно { type:'js' }
     dracoLoader.preload();
 
     const loader = new GLTFLoader();
