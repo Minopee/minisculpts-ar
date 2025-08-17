@@ -94,15 +94,6 @@ async function startAR(){
     maxTrack: 1,
   });
 
-  const {renderer, scene, camera, video} = mindarThree;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.outputEncoding = THREE.sRGBEncoding;
-
-  // покажем, что видео реально существует и играет
-  video.addEventListener('loadeddata', ()=> showHud('model=<b>'+modelName+'</b> • s='+s+' • 🎥 видео готово'));
-  video.addEventListener('playing', ()=> showHud('model=<b>'+modelName+'</b> • s='+s+' • ▶️ видео играет'));
-
   scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
   const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(0,1,1); scene.add(dir);
 
