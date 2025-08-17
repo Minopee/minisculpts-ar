@@ -1,37 +1,41 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-  <title>Mini Sculpts — AR (ESM)</title>
-  <style>
-    html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
-    #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:10;flex-direction:column;gap:12px;text-align:center;padding:24px}
-    #start{padding:12px 18px;border-radius:999px;border:0;background:#22c55e;color:#000;font-weight:700;font-size:16px;cursor:pointer}
-    #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 12px;font-size:14px;z-index:5}
-    #err{position:fixed;top:12px;left:12px;right:12px;background:#b91c1c;color:#fff;padding:10px;border-radius:10px;display:none;z-index:20;white-space:pre-wrap}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+<title>Mini Sculpts — AR (ESM + debug)</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
+  #app{position:fixed;inset:0;overflow:hidden;background:#000} /* контейнер для MindAR */
+  #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:20;flex-direction:column;gap:12px;text-align:center;padding:24px}
+  #start{padding:12px 18px;border-radius:999px;border:0;background:#22c55e;color:#000;font-weight:700;font-size:16px;cursor:pointer}
+  #hud{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 12px;font-size:14px;z-index:30}
+  #err{position:fixed;top:12px;left:12px;right:12px;background:#b91c1c;color:#fff;padding:10px;border-radius:10px;display:none;z-index:40;white-space:pre-wrap}
+  #dbg{position:fixed;left:12px;top:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 12px;font-size:12px;z-index:30;white-space:pre}
+</style>
 
-  <!-- import map: указываем локальные пути к three и его addons -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "./vendor/three.module.js",
-      "three/addons/": "./vendor/three/examples/jsm/",
-      "mindar-image-three": "./vendor/mindar/mindar-image-three.prod.js"
-    }
+<!-- import map: локальные пути -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/three/examples/jsm/",
+    "mindar-image-three": "./vendor/mindar/mindar-image-three.prod.js"
   }
-  </script>
+}
+</script>
 </head>
 <body>
+<div id="app"></div>
 <div id="err"></div>
+<div id="dbg">boot…</div>
 <div id="ui">
   <h1>Мини-AR</h1>
-  <div style="opacity:.9;max-width:560px">Разреши камеру и наведи на «монету» на базе фигурки.</div>
+  <div style="opacity:.9;max-width:560px">Разреши камеру и наведи на «монету».</div>
   <button id="start">Запустить AR</button>
-  <div style="opacity:.7;font-size:13px">Открывай в Safari/Chrome (не в приложениях).</div>
+  <div style="opacity:.7;font-size:13px">Открывай в Chrome/Safari (не внутри приложений).</div>
 </div>
-<div id="msg" style="display:none"></div>
+<div id="hud" style="display:none"></div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -39,7 +43,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MindARThree } from 'mindar-image-three';
 
 const qs = new URLSearchParams(location.search);
-const modelName = qs.get('model') || 'hbday.glb';  // файл в /ar/assets/
+const modelName = qs.get('model') || 'hbday.glb';
 const userMsg   = qs.get('msg')   || 'С днём рождения!';
 const s  = parseFloat(qs.get('s')  || '0.4');
 const px = parseFloat(qs.get('px') || '0');
@@ -50,8 +54,11 @@ const ry = parseFloat(qs.get('ry') || '0');
 const rz = parseFloat(qs.get('rz') || '0');
 
 const $ = s=>document.querySelector(s);
+const log = t => { $("#dbg").textContent = t; };
 const showErr = t=>{ const e=$("#err"); e.textContent=t; e.style.display='block'; };
-const showMsg = t=>{ const m=$("#msg"); m.innerHTML=t; m.style.display='block'; };
+const showHud = t=>{ const m=$("#hud"); m.innerHTML=t; m.style.display='block'; };
+
+window.addEventListener('error', e => showErr('JS error: '+(e.error?.message||e.message||e)));
 
 $("#start").addEventListener("click", ()=>startAR().catch(e=>showErr('Ошибка: '+(e.message||e))));
 
@@ -60,7 +67,8 @@ function makeTextSprite(text, fontSize=92){
   x.font=`700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial`;
   const w=Math.min(2048, Math.max(512, x.measureText(text).width+pad*2)), h=fontSize+pad*2;
   c.width=w; c.height=h; x.font=`700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial`;
-  x.textAlign='center'; x.textBaseline='middle'; x.lineWidth=fontSize*0.16; x.strokeStyle='#000'; x.strokeText(text,w/2,h/2);
+  x.textAlign='center'; x.textBaseline='middle';
+  x.lineWidth=fontSize*0.16; x.strokeStyle='#000'; x.strokeText(text,w/2,h/2);
   x.fillStyle='#fff'; x.fillText(text,w/2,h/2);
   const tex=new THREE.CanvasTexture(c); tex.encoding=THREE.sRGBEncoding;
   const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true}));
@@ -71,20 +79,29 @@ async function headOk(u){ try{ const r=await fetch(u,{method:'HEAD'}); return r.
 
 async function startAR(){
   $("#ui").style.display="none";
+  log('checking files…');
 
   if(!(await headOk('./targets/moneta.mind'))) throw new Error('Нет файла /ar/targets/moneta.mind');
   if(!(await headOk('./assets/'+modelName)))   throw new Error('Нет модели /ar/assets/'+modelName);
 
+  log('init MindAR…');
   const mindarThree = new MindARThree({
-    container: document.body,
+    container: document.querySelector('#app'),
     imageTargetSrc: './targets/moneta.mind',
-    uiScanning: true, filterMinCF: 0.0001, filterBeta: 0.01, maxTrack: 1,
+    uiScanning: true,
+    filterMinCF: 0.0001,
+    filterBeta: 0.01,
+    maxTrack: 1,
   });
 
-  const {renderer, scene, camera} = mindarThree;
+  const {renderer, scene, camera, video} = mindarThree;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputEncoding = THREE.sRGBEncoding;
+
+  // покажем, что видео реально существует и играет
+  video.addEventListener('loadeddata', ()=> showHud('model=<b>'+modelName+'</b> • s='+s+' • 🎥 видео готово'));
+  video.addEventListener('playing', ()=> showHud('model=<b>'+modelName+'</b> • s='+s+' • ▶️ видео играет'));
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
   const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(0,1,1); scene.add(dir);
@@ -103,19 +120,24 @@ async function startAR(){
     obj.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; }});
     obj.userData.update=(t,dt)=>{ obj.rotation.y += dt*0.2; };
     root.add(obj);
-    showMsg('model=<b>'+modelName+'</b> • s='+s);
   }, undefined, (err)=> showErr('GLTF_LOAD_FAIL: '+err.message));
 
-  anchor.onTargetFound = ()=> showMsg('🎯 Трек найден');
-  anchor.onTargetLost  = ()=> showMsg('🔎 Держи «монету» в кадре');
+  anchor.onTargetFound = ()=> showHud('🎯 Трек найден');
+  anchor.onTargetLost  = ()=> showHud('🔎 Держи «монету» в кадре');
 
-  const clock = new THREE.Clock();
-  await mindarThree.start();
-  renderer.setAnimationLoop(()=>{
-    const dt = Math.min(0.033, clock.getDelta());
-    root.traverse(o=>o.userData?.update?.(clock.elapsedTime, dt));
-    renderer.render(scene, camera);
-  });
+  try{
+    log('start camera…');
+    await mindarThree.start();        // ← если тут что-то не так — увидишь ошибку
+    log('render loop…');
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(()=>{
+      const dt = Math.min(0.033, clock.getDelta());
+      root.traverse(o=>o.userData?.update?.(clock.elapsedTime, dt));
+      renderer.render(scene, camera);
+    });
+  }catch(e){
+    showErr('MINDAR_START_FAIL: '+e.message+'\nПроверь разрешение камеры и попробуй открыть ссылку в чистом Chrome/Safari (не внутри приложений).');
+  }
 }
 </script>
 </body>
