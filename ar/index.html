@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>Mini Sculpts — AR (ESM + DRACO + Animation)</title>
+<title>Mini Sculpts — AR (ESM + DRACO + Anim + Stable)</title>
 <style>
   html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
   #app{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -34,7 +34,7 @@
   <h1>Мини-AR</h1>
   <div style="opacity:.9;max-width:560px">Разреши камеру и наведи на «монету».</div>
   <button id="start">Запустить AR</button>
-  <div style="opacity:.7;font-size:13px">Открывай в Chrome/Safari (не внутри мессенджеров). Свет без бликов.</div>
+  <div style="opacity:.7;font-size:13px">Открывай в Chrome/Safari (не внутри мессенджеров). Матовый свет.</div>
 </div>
 
 <div id="hud"></div>
@@ -46,19 +46,19 @@ import { DRACOLoader }  from 'three/addons/loaders/DRACOLoader.js';
 import { MindARThree }  from 'mindar-image-three';
 
 const qs = new URLSearchParams(location.search);
-const modelName = qs.get('model') || 'hbday_anim.glb';   // твой файл с анимацией
+const modelName = qs.get('model') || 'hbday.glb';        // файл в /ar/assets/
 const s  = parseFloat(qs.get('s')  || '0.4');
 const px = parseFloat(qs.get('px') || '0');
 const py = parseFloat(qs.get('py') || '0.45');
 const pz = parseFloat(qs.get('pz') || '0');
-const rx = parseFloat(qs.get('rx') || '-90'); // по умолчанию развернём как раньше
+const rx = parseFloat(qs.get('rx') || '-90');            // поправка осей по умолчанию
 const ry = parseFloat(qs.get('ry') || '0');
-const rz = parseFloat(qs.get('rz') || '180'); // докрутка, если нужно
-const noModel = qs.get('nomodel') === '1';
-const userMsg = qs.get('msg') || '';
-const noMsg   = noModel || (qs.get('nomsg') === '1');
-const clipName = qs.get('clip') || '';      // ?clip=ИмяКлипа
-const speed    = parseFloat(qs.get('speed') || '1'); // ?speed=1.0
+const rz = parseFloat(qs.get('rz') || '180');
+const clipName = qs.get('clip') || '';                   // ?clip=ИмяКлипа
+const speed    = parseFloat(qs.get('speed') || '1');     // ?speed=1.0
+const noModel  = qs.get('nomodel') === '1';              // ?nomodel=1 — без GLB
+const userMsg  = qs.get('msg') || '';
+const noMsg    = noModel || (qs.get('nomsg') === '1');   // ?nomsg=1 — скрыть подпись
 
 const $ = s=>document.querySelector(s);
 const log = t => { $("#dbg").textContent = t; };
@@ -97,8 +97,9 @@ async function startAR(){
     container: document.querySelector('#app'),
     imageTargetSrc: './targets/moneta.mind',
     uiScanning: true,
-    filterMinCF: 0.0001,
-    filterBeta: 0.01,
+    // чуть более стабильная поза
+    filterMinCF: 0.005,
+    filterBeta: 0.08,
     maxTrack: 1
   });
 
@@ -128,7 +129,7 @@ async function startAR(){
     root.add(banner);
   }
 
-  // === загрузка модели (с DRACO) + центрирование на базу + анимация ===
+  // === загрузка модели (с DRACO) + центрирование + анимация ===
   if (!noModel) {
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('./vendor/three/examples/jsm/libs/draco/');
@@ -141,33 +142,32 @@ async function startAR(){
     loader.load('./assets/'+modelName, (gltf)=>{
       const obj = gltf.scene || gltf.scenes[0];
 
-      // 1) ориентация/масштаб
-      obj.scale.setScalar(s);
-      obj.rotation.set(
+      // цепочка групп: holder(трансформы из URL) → offset(центр/посадка) → obj(анимируемый)
+      const holder = new THREE.Group();
+      const offset = new THREE.Group();
+      holder.add(offset);
+      offset.add(obj);
+      root.add(holder);
+
+      // трансформы применяем к holder (анимации obj не затрагиваем)
+      holder.scale.setScalar(s);
+      holder.rotation.set(
         THREE.MathUtils.degToRad(rx),
         THREE.MathUtils.degToRad(ry),
         THREE.MathUtils.degToRad(rz)
       );
+      holder.position.set(px, py, pz);
 
-      // 2) bbox с учётом масштаба/поворота
+      // центрирование и посадка дна на плоскость
       obj.updateMatrixWorld(true);
       const box    = new THREE.Box3().setFromObject(obj);
       const center = box.getCenter(new THREE.Vector3());
       const bottom = box.min.y;
 
-      // 3) pivot по центру монеты
-      const pivot = new THREE.Group();
-      pivot.position.set(px, py, pz);
-      root.add(pivot);
+      offset.position.sub(center);               // центр в (0,0,0)
+      offset.position.y += (center.y - bottom);  // «дно» на y=0
 
-      // 4) переносим геометрию: центр в (0,0,0), «дно» на y=0
-      obj.position.sub(center);
-      obj.position.y += (center.y - bottom);
-
-      // 5) добавляем в pivot (без автоповорота)
-      pivot.add(obj);
-
-      // 6) анимации
+      // анимации
       if (gltf.animations && gltf.animations.length) {
         const mixer = new THREE.AnimationMixer(obj);
         let clip = gltf.animations[0];
@@ -181,11 +181,10 @@ async function startAR(){
         action.clampWhenFinished = false;
         action.play();
         mixers.push(mixer);
+        showHud(`🎬 ${clip.name} • model=<b>${modelName}</b> • s=${s}`);
       } else {
-        showHud('⚠️ В GLB не найдены клипы анимации');
+        showHud('⚠️ В GLB не найдено клипов анимации');
       }
-
-      showHud(`model=<b>${modelName}</b> • s=${s}`);
     }, undefined, (err)=> showErr('GLTF_LOAD_FAIL: '+err.message));
   }
 
@@ -199,7 +198,6 @@ async function startAR(){
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(()=>{
       const dt = Math.min(0.033, clock.getDelta());
-      // апдейтим анимации
       for (const m of mixers) m.update(dt);
       renderer.render(scene, camera);
     });
