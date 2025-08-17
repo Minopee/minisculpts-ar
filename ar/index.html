@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>Mini Sculpts — AR (ESM + debug)</title>
+<title>Mini Sculpts — AR (ESM + DRACO)</title>
 <style>
   html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
   #app{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -41,11 +41,12 @@
 
 <script type="module">
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MindARThree } from 'mindar-image-three';
+import { GLTFLoader }   from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader }  from 'three/addons/loaders/DRACOLoader.js';
+import { MindARThree }  from 'mindar-image-three';
 
 const qs = new URLSearchParams(location.search);
-const modelName = qs.get('model') || 'hbday.glb';
+const modelName = qs.get('model') || 'hbday.glb';        // файл в /ar/assets/
 const userMsg   = qs.get('msg')   || 'С днём рождения!';
 const s  = parseFloat(qs.get('s')  || '0.4');
 const px = parseFloat(qs.get('px') || '0');
@@ -54,7 +55,7 @@ const pz = parseFloat(qs.get('pz') || '0');
 const rx = parseFloat(qs.get('rx') || '0');
 const ry = parseFloat(qs.get('ry') || '0');
 const rz = parseFloat(qs.get('rz') || '0');
-const noModel = qs.get('nomodel') === '1';
+const noModel = qs.get('nomodel') === '1';              // ?nomodel=1 — запуск без GLB
 
 const $ = s=>document.querySelector(s);
 const log = t => { $("#dbg").textContent = t; };
@@ -62,7 +63,6 @@ const showErr = t=>{ const e=$("#err"); e.textContent=t; e.style.display='block'
 const showHud = t=>{ const m=$("#hud"); m.innerHTML=t; m.style.display='block'; };
 
 window.addEventListener('error', e => showErr('JS error: '+(e.error?.message||e.message||e)));
-
 $("#start").addEventListener("click", ()=>startAR().catch(e=>showErr('Ошибка: '+(e.message||e))));
 
 function makeTextSprite(text, fontSize=92){
@@ -94,11 +94,11 @@ async function startAR(){
     uiScanning: true,
     filterMinCF: 0.0001,
     filterBeta: 0.01,
-    maxTrack: 1,
+    maxTrack: 1
   });
 
   const { renderer, scene, camera } = mindarThree;
-  const video = mindarThree.video; // важно: так правильно в ESM
+  const video = mindarThree.video; // ESM: так корректно
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -109,16 +109,27 @@ async function startAR(){
     video.addEventListener('playing',    ()=> showHud(`model=<b>${modelName}</b> • s=${s} • ▶️ видео играет`));
   }
 
+  // свет
   scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
   const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(0,1,1); scene.add(dir);
 
+  // якорь
   const anchor = mindarThree.addAnchor(0);
   const root = new THREE.Group(); anchor.group.add(root);
 
+  // баннер-текст
   const banner = makeTextSprite(userMsg, 92); banner.position.set(0,0.9,0); root.add(banner);
 
+  // загрузка модели (с DRACO)
   if (!noModel) {
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('./vendor/three/examples/jsm/libs/draco/'); // папка .wasm/.js
+    dracoLoader.setDecoderConfig({ type: 'wasm' }); // при проблемах с wasm можно: { type: 'js' }
+    dracoLoader.preload();
+
     const loader = new GLTFLoader();
+    loader.setDRACOLoader(dracoLoader);
+
     loader.load('./assets/'+modelName, (gltf)=>{
       const obj = gltf.scene || gltf.scenes[0];
       obj.scale.setScalar(s);
